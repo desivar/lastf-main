@@ -4,7 +4,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5500; // Explicitly set to 5500 as per your previous successful backend runs
 
 // Middleware
 app.use(cors());
@@ -55,27 +55,23 @@ const Job = mongoose.model('Job', jobSchema);
 
 // GitHub OAuth callback - simple version
 app.get('/auth/github/callback', async (req, res) => {
-  // In real GitHub OAuth, you'd get user data from GitHub API
-  // For simplicity, we'll just create/find user with github username
   try {
     let user = await User.findOne({ githubUsername: 'desivar' });
-    
+
     if (!user) {
-      // Create user and sample data
       user = await User.create({
         githubUsername: 'desivar',
         name: 'Desivar Developer',
         email: 'desivar@example.com',
         avatar: 'https://avatars.githubusercontent.com/u/1?v=4'
       });
-      
-      // Create sample data
       await createSampleData();
     }
-    
-    res.redirect('http://localhost:3000?auth=success');
+
+    res.redirect('http://localhost:5173?auth=success'); // Redirect to your frontend's port
   } catch (error) {
-    res.redirect('http://localhost:3000?auth=error');
+    console.error("GitHub callback error:", error);
+    res.redirect('http://localhost:5173?auth=error'); // Redirect to your frontend's port
   }
 });
 
@@ -151,78 +147,53 @@ app.post('/api/pipelines', async (req, res) => {
 
 // Create sample data function
 async function createSampleData() {
-  // Sample pipelines
+  console.log("Creating sample data...");
   await Pipeline.create([
-    {
-      name: "Web Development",
-      description: "Standard web development workflow",
-      steps: ["Initial Contact", "Requirements", "Design", "Development", "Testing", "Deployment"],
-      jobCount: 2
-    },
-    {
-      name: "Mobile App Development",
-      description: "Mobile application development process",
-      steps: ["Discovery", "Wireframes", "UI/UX", "Development", "Beta Testing", "App Store"],
-      jobCount: 1
-    }
+    { name: "Web Development", description: "Standard web development workflow", steps: ["Initial Contact", "Requirements", "Design", "Development", "Testing", "Deployment"], jobCount: 2 },
+    { name: "Mobile App Development", description: "Mobile application development process", steps: ["Discovery", "Wireframes", "UI/UX", "Development", "Beta Testing", "App Store"], jobCount: 1 }
   ]);
-
-  // Sample customers
   await Customer.create([
-    {
-      name: "ABC Corp",
-      email: "contact@abccorp.com",
-      phone: "+1-555-0123",
-      activeJobs: 1,
-      totalJobs: 2
-    },
-    {
-      name: "Tasty Bites",
-      email: "info@tastybites.com",
-      phone: "+1-555-0456",
-      activeJobs: 1,
-      totalJobs: 1
-    },
-    {
-      name: "Jane Smith",
-      email: "jane@example.com",
-      phone: "+1-555-0789",
-      activeJobs: 1,
-      totalJobs: 1
-    }
+    { name: "ABC Corp", email: "contact@abccorp.com", phone: "+1-555-0123", activeJobs: 1, totalJobs: 2 },
+    { name: "Tasty Bites", email: "info@tastybites.com", phone: "+1-555-0456", activeJobs: 1, totalJobs: 1 },
+    { name: "Jane Smith", email: "jane@example.com", phone: "+1-555-0789", activeJobs: 1, totalJobs: 1 }
   ]);
-
-  // Sample jobs
   await Job.create([
-    {
-      title: "E-commerce Website",
-      customer: "ABC Corp",
-      pipeline: "Web Development",
-      currentStep: "Development",
-      status: "active",
-      dueDate: "2025-07-01",
-      progress: 60
-    },
-    {
-      title: "Restaurant App",
-      customer: "Tasty Bites",
-      pipeline: "Mobile App Development",
-      currentStep: "UI/UX",
-      status: "active",
-      dueDate: "2025-07-15",
-      progress: 30
-    },
-    {
-      title: "Portfolio Site",
-      customer: "Jane Smith",
-      pipeline: "Web Development",
-      currentStep: "Testing",
-      status: "active",
-      dueDate: "2025-06-20",
-      progress: 85
-    }
+    { title: "E-commerce Website", customer: "ABC Corp", pipeline: "Web Development", currentStep: "Development", status: "active", dueDate: "2025-07-01", progress: 60 },
+    { title: "Restaurant App", customer: "Tasty Bites", pipeline: "Mobile App Development", currentStep: "UI/UX", status: "active", dueDate: "2025-07-15", progress: 30 },
+    { title: "Portfolio Site", customer: "Jane Smith", pipeline: "Web Development", currentStep: "Testing", status: "active", dueDate: "2025-06-20", progress: 85 }
   ]);
+  console.log("Sample data created successfully.");
 }
+
+// Add a dashboard stats route
+app.get('/api/dashboard/stats', async (req, res) => {
+    try {
+        const activeJobs = await Job.countDocuments({ status: 'active' });
+        const totalCustomers = await Customer.countDocuments();
+        const totalPipelines = await Pipeline.countDocuments();
+
+        const today = new Date();
+        const next7Days = new Date();
+        next7Days.setDate(today.getDate() + 7);
+
+        // Simple string comparison for due date. For robustness, consider Mongoose date querying.
+        const jobsDueThisWeek = await Job.countDocuments({
+            dueDate: { $gte: today.toISOString().split('T')[0], $lte: next7Days.toISOString().split('T')[0] },
+            status: 'active'
+        });
+
+        res.json({
+            activeJobs,
+            totalCustomers,
+            totalPipelines,
+            jobsDueThisWeek
+        });
+    } catch (error) {
+        console.error('Error fetching dashboard stats:', error);
+        res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+    }
+});
+
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
