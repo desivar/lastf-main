@@ -1,0 +1,20 @@
+{
+  "name": "lastf-main",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/desivar/lastf-main.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/desivar/lastf-main/issues"
+  },
+  "homepage": "https://github.com/desivar/lastf-main#readme",
+  "description": ""
+}
