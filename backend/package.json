@@ -18,6 +18,7 @@
   "homepage": "https://github.com/desivar/lastf-main#readme",
   "description": "",
   "dependencies": {
+    "cors": "^2.8.5",
     "express": "^5.1.0",
     "mongoose": "^8.16.0"
   }
