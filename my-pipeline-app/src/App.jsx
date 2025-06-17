@@ -154,7 +154,7 @@ const App = () => {
   }, [isAuthenticated]); // Rerun effect when isAuthenticated state changes
 
   const handleGitHubLogin = () => {
-    window.location.href = 'http://localhost:5500/auth/github/callback';
+  window.location.href = 'http://localhost:5500/auth/github';
   };
 
   const handleLogout = () => {
