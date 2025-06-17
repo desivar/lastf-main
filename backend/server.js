@@ -157,6 +157,27 @@ app.get('/api/user', (req, res) => {
             });
     }
 });
+// --- Logout Route ---
+app.get('/auth/logout', (req, res, next) => {
+    // Passport.js's req.logout() function (requires a callback in newer versions)
+    req.logout(function(err) {
+        if (err) {
+            console.error('Error during Passport.js logout:', err);
+            return next(err); // Pass error to the next middleware
+        }
+        // Destroy the session to fully clear all session data
+        req.session.destroy((err) => {
+            if (err) {
+                console.error('Error destroying session:', err);
+                return res.status(500).json({ error: 'Failed to destroy session' });
+            }
+            // Clear the session cookie from the browser (default name for express-session is 'connect.sid')
+            res.clearCookie('connect.sid');
+            // Redirect the user back to the frontend's login page or home page
+            res.redirect('http://localhost:5173');
+        });
+    });
+});
 
 
 // All other API routes (jobs, customers, pipelines, dashboard stats)
