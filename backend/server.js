@@ -1,7 +1,9 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-require('dotenv').config();
+// At the very top of your server.js
+require('dotenv').config(); // Ensure this is the first line
+
 const passport = require('passport'); // New
 const GitHubStrategy = require('passport-github2').Strategy; // New
 const session = require('express-session'); // New
@@ -74,39 +76,53 @@ const Job = mongoose.model('Job', jobSchema);
 
 
 // --- Passport.js Configuration ---
-passport.use(new GitHubStrategy({
-    clientID: process.env.GITHUB_CLIENT_ID,
-    clientSecret: process.env.GITHUB_CLIENT_SECRET,
-    callbackURL: "http://localhost:5500/auth/github/callback" // This must match your GitHub App setting
-},
-async (accessToken, refreshToken, profile, done) => {
-    try {
-        let user = await User.findOne({ githubId: profile.id });
-        if (!user) {
-            user = await User.create({
-                githubId: profile.id,
-                githubUsername: profile.username,
-                name: profile.displayName || profile.username,
-                email: profile.emails && profile.emails.length > 0 ? profile.emails[0].value : null,
-                avatar: profile.photos && profile.photos.length > 0 ? profile.photos[0].value : null
-            });
-            await createSampleData(); // Create sample data for new users
-            console.log("New user created and sample data generated.");
-        } else {
-            // Check if sample data already exists for existing user
-            const pipelinesCount = await Pipeline.countDocuments();
-            if (pipelinesCount === 0) {
-                await createSampleData();
-                console.log("Sample data added for existing user.");
+// ADD THIS TRY...CATCH BLOCK AND CONSOLE.LOGS AROUND YOUR PASSPORT.USE
+try {
+    console.log("Attempting to configure Passport.js GitHub Strategy...");
+    console.log("GITHUB_CLIENT_ID check:", process.env.GITHUB_CLIENT_ID ? "Loaded" : "NOT LOADED");
+    console.log("GITHUB_CLIENT_SECRET check:", process.env.GITHUB_CLIENT_SECRET ? "Loaded" : "NOT LOADED");
+    console.log("CALLBACK_URL set in Passport strategy:", "http://localhost:5500/auth/github/callback"); // Verify this matches GitHub App
+
+    passport.use(new GitHubStrategy({
+        clientID: process.env.GITHUB_CLIENT_ID,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET,
+        callbackURL: "http://localhost:5500/auth/github/callback" // This must match your GitHub App setting
+    },
+    async (accessToken, refreshToken, profile, done) => {
+        try {
+            let user = await User.findOne({ githubId: profile.id });
+            if (!user) {
+                user = await User.create({
+                    githubId: profile.id,
+                    githubUsername: profile.username,
+                    name: profile.displayName || profile.username,
+                    email: profile.emails && profile.emails.length > 0 ? profile.emails[0].value : null,
+                    avatar: profile.photos && profile.photos.length > 0 ? profile.photos[0].value : null
+                });
+                await createSampleData(); // Create sample data for new users
+                console.log("New user created and sample data generated.");
             } else {
-                console.log("Sample data already exists. Skipping creation for existing user.");
+                // Check if sample data already exists for existing user
+                const pipelinesCount = await Pipeline.countDocuments();
+                if (pipelinesCount === 0) {
+                    await createSampleData();
+                    console.log("Sample data added for existing user.");
+                } else {
+                    console.log("Sample data already exists. Skipping creation for existing user.");
+                }
             }
+            console.log(`Passport callback: User ${profile.username} (${user.githubId}) processed.`); // ADDED LOG
+            return done(null, user);
+        } catch (error) {
+            console.error('Error in GitHub strategy callback:', error); // ADDED LOG
+            return done(error, null);
         }
-        return done(null, user);
-    } catch (error) {
-        return done(error, null);
-    }
-}));
+    }));
+    console.log("Passport.js GitHub Strategy configured successfully."); // ADDED LOG
+
+} catch (e) {
+    console.error("CRITICAL ERROR: Failed to configure Passport.js GitHub Strategy:", e); // ADDED LOG
+}
 
 // Serialize user into the session
 passport.serializeUser((user, done) => {
@@ -119,182 +135,38 @@ passport.deserializeUser(async (id, done) => {
         const user = await User.findById(id);
         done(null, user); // Attach user object to req.user
     } catch (error) {
+        console.error('Error in deserializeUser:', error); // ADDED LOG
         done(error, null);
     }
 });
 
+// Ensure app.use(passport.initialize()) and app.use(passport.session()) are here
+// (You've likely done this earlier in your server.js, just confirming their position)
 
 // --- GitHub OAuth Routes ---
 // This route initiates the GitHub login process
 app.get('/auth/github',
+    (req, res, next) => { // ADDED THIS MIDDLEWARE FOR LOGGING
+        console.log("Received GET request for /auth/github. Initiating GitHub authentication.");
+        next();
+    },
     passport.authenticate('github', { scope: ['user:email'] }) // Request user email scope
 );
 
 // This is the callback route GitHub redirects to after authentication
 app.get('/auth/github/callback',
+    (req, res, next) => { // ADDED THIS MIDDLEWARE FOR LOGGING
+        console.log("Received GET request for /auth/github/callback. Handling GitHub authentication callback.");
+        next();
+    },
     passport.authenticate('github', { failureRedirect: 'http://localhost:5173?auth=error' }),
     (req, res) => {
-        // Successful authentication, redirect to frontend dashboard
+        console.log("GitHub authentication successful. Redirecting to frontend."); // ADDED LOG
         res.redirect('http://localhost:5173?auth=success');
     }
 );
 
-// Get user info (now using Passport's req.user)
-app.get('/api/user', (req, res) => {
-    if (req.isAuthenticated()) { // Check if user is authenticated via session
-        res.json(req.user);
-    } else {
-        // If not authenticated via session, try to retrieve the 'desivar' mock user
-        // This is a fallback for testing without full auth, but should ideally be removed
-        // in a production setup where all /api calls require authentication.
-        User.findOne({ githubUsername: 'desivar' })
-            .then(user => {
-                res.json(user || { error: 'User not authenticated or found' });
-            })
-            .catch(error => {
-                console.error('Failed to get mock user:', error);
-                res.status(500).json({ error: 'Failed to get user' });
-            });
-    }
-});
-// --- Logout Route ---
-app.get('/auth/logout', (req, res, next) => {
-    // Passport.js's req.logout() function (requires a callback in newer versions)
-    req.logout(function(err) {
-        if (err) {
-            console.error('Error during Passport.js logout:', err);
-            return next(err); // Pass error to the next middleware
-        }
-        // Destroy the session to fully clear all session data
-        req.session.destroy((err) => {
-            if (err) {
-                console.error('Error destroying session:', err);
-                return res.status(500).json({ error: 'Failed to destroy session' });
-            }
-            // Clear the session cookie from the browser (default name for express-session is 'connect.sid')
-            res.clearCookie('connect.sid');
-            // Redirect the user back to the frontend's login page or home page
-            res.redirect('http://localhost:5173');
-        });
-    });
-});
-
-
-// All other API routes (jobs, customers, pipelines, dashboard stats)
-// You might want to protect these with req.isAuthenticated() middleware
-// For now, leaving them as is, but be aware they are publicly accessible if not protected.
-app.get('/api/jobs', async (req, res) => { /* ... existing code ... */
-    try {
-        const jobs = await Job.find();
-        res.json(jobs);
-    } catch (error) {
-        console.error('Failed to get jobs:', error);
-        res.status(500).json({ error: 'Failed to get jobs' });
-    }
-});
-app.post('/api/jobs', async (req, res) => { /* ... existing code ... */
-    if (!req.isAuthenticated()) { return res.status(401).json({ error: 'Unauthorized' }); }
-    try {
-        const job = await Job.create(req.body);
-        res.status(201).json(job);
-    } catch (error) {
-        console.error('Failed to create job:', error);
-        res.status(500).json({ error: 'Failed to create job' });
-    }
-});
-app.get('/api/customers', async (req, res) => { /* ... existing code ... */
-    try {
-        const customers = await Customer.find();
-        res.json(customers);
-    } catch (error) {
-        console.error('Failed to get customers:', error);
-        res.status(500).json({ error: 'Failed to get customers' });
-    }
-});
-app.post('/api/customers', async (req, res) => { /* ... existing code ... */
-    if (!req.isAuthenticated()) { return res.status(401).json({ error: 'Unauthorized' }); }
-    try {
-        const customer = await Customer.create(req.body);
-        res.status(201).json(customer);
-    } catch (error) {
-        console.error('Failed to create customer:', error);
-        res.status(500).json({ error: 'Failed to create customer' });
-    }
-});
-app.get('/api/pipelines', async (req, res) => { /* ... existing code ... */
-    try {
-        const pipelines = await Pipeline.find();
-        res.json(pipelines);
-    } catch (error) {
-        console.error('Failed to get pipelines:', error);
-        res.status(500).json({ error: 'Failed to get pipelines' });
-    }
-});
-app.post('/api/pipelines', async (req, res) => { /* ... existing code ... */
-    if (!req.isAuthenticated()) { return res.status(401).json({ error: 'Unauthorized' }); }
-    try {
-        const pipeline = await Pipeline.create(req.body);
-        res.status(201).json(pipeline);
-    } catch (error) {
-        console.error('Failed to create pipeline:', error);
-        res.status(500).json({ error: 'Failed to create pipeline' });
-    }
-});
-app.get('/api/dashboard/stats', async (req, res) => { /* ... existing code ... */
-    try {
-        const activeJobs = await Job.countDocuments({ status: 'active' });
-        const totalCustomers = await Customer.countDocuments();
-        const totalPipelines = await Pipeline.countDocuments();
-
-        const today = new Date();
-        const next7Days = new Date();
-        next7Days.setDate(today.getDate() + 7);
-
-        const jobsDueThisWeek = await Job.countDocuments({
-            dueDate: { $gte: today.toISOString().split('T')[0], $lte: next7Days.toISOString().split('T')[0] },
-            status: 'active'
-        });
-
-        res.json({
-            activeJobs,
-            totalCustomers,
-            totalPipelines,
-            jobsDueThisWeek
-        });
-    } catch (error) {
-        console.error('Error fetching dashboard stats:', error);
-        res.status(500).json({ error: 'Failed to fetch dashboard stats' });
-    }
-});
-
-// Function to create sample data
-async function createSampleData() {
-    console.log("Attempting to create sample data...");
-    const pipelinesCount = await Pipeline.countDocuments();
-    const customersCount = await Customer.countDocuments();
-    const jobsCount = await Job.countDocuments();
-
-    if (pipelinesCount === 0 && customersCount === 0 && jobsCount === 0) {
-        await Pipeline.create([
-            { name: "Web Development", description: "Standard web development workflow", steps: ["Initial Contact", "Requirements", "Design", "Development", "Testing", "Deployment"], jobCount: 2 },
-            { name: "Mobile App Development", description: "Mobile application development process", steps: ["Discovery", "Wireframes", "UI/UX", "Development", "Beta Testing", "App Store"], jobCount: 1 }
-        ]);
-        await Customer.create([
-            { name: "ABC Corp", email: "contact@abccorp.com", phone: "+1-555-0123", activeJobs: 1, totalJobs: 2 },
-            { name: "Tasty Bites", email: "info@tastybites.com", phone: "+1-555-0456", activeJobs: 1, totalJobs: 1 },
-            { name: "Jane Smith", email: "jane@example.com", phone: "+1-555-0789", activeJobs: 1, totalJobs: 1 }
-        ]);
-        await Job.create([
-            { title: "E-commerce Website", customer: "ABC Corp", pipeline: "Web Development", currentStep: "Development", status: "active", dueDate: "2025-07-01", progress: 60 },
-            { title: "Restaurant App", customer: "Tasty Bites", pipeline: "Mobile App Development", currentStep: "UI/UX", status: "active", dueDate: "2025-07-15", progress: 30 },
-            { title: "Portfolio Site", customer: "Jane Smith", pipeline: "Web Development", currentStep: "Testing", status: "active", dueDate: "2025-06-20", progress: 85 }
-        ]);
-        console.log("Sample data created successfully.");
-    } else {
-        console.log("Sample data already exists. Skipping creation.");
-    }
-}
-
+// ... (Rest of your API routes for /api/user, /api/jobs, etc.)
 
 // Start server
 app.listen(PORT, () => {
